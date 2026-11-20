@@ -1,0 +1,22 @@
+[
+  {
+    "order": "HP-1041",
+    "carrier": "Cascade Freight",
+    "created": "2026-11-17",
+    "state": "delivered",
+    "delivered": "2026-11-19"
+  },
+  {
+    "order": "HP-1042",
+    "carrier": "Cascade Freight",
+    "created": "2026-11-19",
+    "state": "rejected",
+    "reason": "address validation failed: postal code 83702 does not match city Bend"
+  },
+  {
+    "order": "HP-1043",
+    "carrier": "Cascade Freight",
+    "created": "2026-11-19",
+    "state": "in transit"
+  }
+]

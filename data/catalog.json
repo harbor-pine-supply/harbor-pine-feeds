@@ -1,0 +1,18 @@
+[
+  {
+    "sku": "HP-TENT-2P",
+    "name": "Ridgeline 2-Person Tent",
+    "description": "Lightweight two-person, three-season tent with footprint.",
+    "price": 239,
+    "unit": "each",
+    "qty": 12
+  },
+  {
+    "sku": "HP-LAMP-2",
+    "name": "Glowline Headlamp",
+    "description": "350-lumen rechargeable headlamp (USB-C).",
+    "price": 39.95,
+    "unit": "each",
+    "qty": 30
+  }
+]

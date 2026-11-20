@@ -1,0 +1,20 @@
+[
+  {
+    "order": "HP-1041",
+    "captured": "2026-11-17",
+    "amount": 143.5,
+    "state": "captured"
+  },
+  {
+    "order": "HP-1042",
+    "captured": "2026-11-18",
+    "amount": 288.95,
+    "state": "captured"
+  },
+  {
+    "order": "HP-1043",
+    "captured": "2026-11-18",
+    "amount": 54,
+    "state": "captured"
+  }
+]

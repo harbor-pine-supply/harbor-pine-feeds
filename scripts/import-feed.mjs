@@ -17,7 +17,7 @@ const mapped = step("map", () => rows.map((r) => ({ sku: r.sku, name: r.name, ra
 // 4. The one model call: normalize product descriptions to the catalog's style (no tools; returns JSON only)
 const described = step("normalize", () => {
   const prompt = "Rewrite each product description in a catalog style: one sentence, sentence case, plain units. Change no facts. Return only a JSON object mapping each SKU to its description.\n\n" + JSON.stringify(Object.fromEntries(mapped.map((m) => [m.sku, m.rawDescription])));
-  const r = spawnSync("claude", ["-p", "--output-format", "json", "--tools", "", prompt], { encoding: "utf8", shell: false });
+  const r = spawnSync("claude", ["-p", "--output-format", "json", "--tools", "", "--", prompt], { encoding: "utf8", shell: false });
   if (r.status !== 0) throw Error("model call failed: " + (r.stderr || "").slice(0, 200));
   const out = JSON.parse(r.stdout), text = String(out.result ?? "");
   report.model = { calls: 1, inputTokens: out.usage?.input_tokens, outputTokens: out.usage?.output_tokens, costUsd: out.total_cost_usd };

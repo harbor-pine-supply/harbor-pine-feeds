@@ -8,7 +8,9 @@ const n = (existsSync(STEPS) ? JSON.parse(readFileSync(STEPS, "utf8")).n : 0) + 
 writeFileSync(STEPS, JSON.stringify({ n }) + "\n");
 if (n > LIMIT) { console.error("Step limit reached (" + LIMIT + "). Stop and report what you found so far."); process.exit(2); }
 const cmd = String(call.tool_input?.command ?? "");
-if (call.tool_name === "Bash" && /refund\.mjs/.test(cmd)) {
+// Block running the refund tool (node ... refund.mjs, at the start or after ; & |), from either shell tool.
+// Reading or listing the script is not a refund (the first version blocked "cat scripts/refund.mjs": a false positive).
+if (["Bash", "PowerShell"].includes(call.tool_name) && /(?:^|[;&|])\s*node(?:\.exe)?\s+\S*refund\.mjs\b/.test(cmd)) {
   const q = "work/approvals.json", list = existsSync(q) ? JSON.parse(readFileSync(q, "utf8")) : [];
   list.push({ requested: cmd, at: new Date().toISOString(), status: "waiting for a person" });
   writeFileSync(q, JSON.stringify(list, null, 2) + "\n");

@@ -3,7 +3,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, cpSync, writeFileSync, readFileSync, existsSync, mkdirSync } from "node:fs";
+import { mkdtempSync, cpSync, writeFileSync, readFileSync, existsSync, mkdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 
@@ -19,7 +19,7 @@ const run = (dir, args, input) => spawnSync(process.execPath, args, { cwd: dir, 
 const gate = (dir, call) => run(dir, [".claude/hooks/policy-gate.mjs"], typeof call === "string" ? call : JSON.stringify({ session_id: "t", ...call }));
 const shell = (command, tool = "Bash") => ({ tool_name: tool, tool_input: { command } });
 
-test("the gate blocks running the refund or approval tools, in every form", () => {
+test("the gate blocks known direct and wrapped invocations of the refund and approval tools", () => {
   const dir = sandbox();
   for (const tool of ["Bash", "PowerShell"]) for (const cmd of [
     "node scripts/refund.mjs HP-1042 288.95", "node -- scripts/refund.mjs HP-1042 1", "node --no-warnings scripts/refund.mjs HP-1042 1",
@@ -88,7 +88,19 @@ test("delivery: a passing summary reaches the outbox; a failing one doesn't, and
   assert.equal(JSON.parse(readFileSync(join(dir, "outbox/HP-1042.status.json"), "utf8")).delivered, false);
   assert.match(readFileSync(join(dir, "work/verify-failures.json"), "utf8"), /amount/);
 });
-test("the refund tool refuses without a person's approval, and validates everything", () => {
+test("delivery: an error after an earlier success leaves the status as not delivered", () => {
+  const dir = sandbox();
+  verify(dir, good);
+  assert.equal(run(dir, ["scripts/deliver-summary.mjs", "HP-1042"]).status, 0);
+  // Force an error: the delivered file can't be withdrawn (a folder stands in its place).
+  rmSync(join(dir, "outbox/HP-1042.json")); mkdirSync(join(dir, "outbox/HP-1042.json"));
+  const r = run(dir, ["scripts/deliver-summary.mjs", "HP-1042"]);
+  assert.equal(r.status, 1);
+  assert.match(r.stdout, /NOT DELIVERED/);
+  const s = JSON.parse(readFileSync(join(dir, "outbox/HP-1042.status.json"), "utf8"));
+  assert.equal(s.delivered, false); assert.equal(s.state, "error");
+});
+test("the refund tool refuses without a matching, unused approval for a known order", () => {
   const dir = sandbox();
   assert.equal(run(dir, ["scripts/refund.mjs", "HP-1042", "288.95"]).status, 1, "no approval");
   assert.equal(run(dir, ["scripts/approve-refund.mjs", "HP-1042", "100", "A person"]).status, 0);

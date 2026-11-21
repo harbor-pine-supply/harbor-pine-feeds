@@ -99,6 +99,15 @@ test("delivery: an error after an earlier success leaves the status as not deliv
   assert.match(r.stdout, /NOT DELIVERED/);
   const s = JSON.parse(readFileSync(join(dir, "outbox/HP-1042.status.json"), "utf8"));
   assert.equal(s.delivered, false); assert.equal(s.state, "error");
+  // And a failure while starting up: work/ can't be created (a file stands in its place).
+  rmSync(join(dir, "outbox/HP-1042.json"), { recursive: true, force: true });
+  verify(dir, good);
+  assert.equal(run(dir, ["scripts/deliver-summary.mjs", "HP-1042"]).status, 0, "delivered again first");
+  rmSync(join(dir, "work"), { recursive: true, force: true }); writeFileSync(join(dir, "work"), "not a folder");
+  const r2 = run(dir, ["scripts/deliver-summary.mjs", "HP-1042", "summary-elsewhere.json"]);
+  assert.equal(r2.status, 1);
+  const s2 = JSON.parse(readFileSync(join(dir, "outbox/HP-1042.status.json"), "utf8"));
+  assert.equal(s2.delivered, false); assert.equal(s2.state, "error");
 });
 test("the refund tool refuses without a matching, unused approval for a known order", () => {
   const dir = sandbox();

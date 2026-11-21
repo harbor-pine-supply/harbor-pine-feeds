@@ -1,4 +1,13 @@
 {
+  "permissions": {
+    "deny": [
+      "Edit(/data/**)",
+      "Edit(/scripts/**)",
+      "Edit(/approvals/**)",
+      "Edit(/outbox/**)",
+      "Edit(/.claude/**)"
+    ]
+  },
   "hooks": {
     "PreToolUse": [
       {
@@ -6,7 +15,9 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node .claude/hooks/policy-gate.mjs"
+            "command": "node",
+            "args": ["${CLAUDE_PROJECT_DIR}/.claude/hooks/policy-gate.mjs"],
+            "onFailure": "block"
           }
         ]
       }

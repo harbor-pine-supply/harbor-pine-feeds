@@ -13,7 +13,9 @@ function sandbox() {
   for (const d of ["data", "scripts", ".claude"]) cpSync(join(repo, d), join(dir, d), { recursive: true });
   return dir;
 }
-const run = (dir, args, input) => spawnSync(process.execPath, args, { cwd: dir, input, encoding: "utf8", env: { ...process.env, CLAUDE_PROJECT_DIR: dir } });
+// Each sandbox gets its own gate-counter folder (in real use it lives in the system temp folder, outside the repo).
+const envFor = (dir) => ({ ...process.env, CLAUDE_PROJECT_DIR: dir, HARBOR_PINE_GATE_DIR: join(dir, "..", "gate-" + dir.split(/[\\/]/).pop()) });
+const run = (dir, args, input) => spawnSync(process.execPath, args, { cwd: dir, input, encoding: "utf8", env: envFor(dir) });
 const gate = (dir, call) => run(dir, [".claude/hooks/policy-gate.mjs"], typeof call === "string" ? call : JSON.stringify({ session_id: "t", ...call }));
 const shell = (command, tool = "Bash") => ({ tool_name: tool, tool_input: { command } });
 
@@ -26,12 +28,12 @@ test("the gate blocks running the refund or approval tools, in every form", () =
 });
 test("the gate blocks shell writes to the records, approvals, scripts and harness", () => {
   const dir = sandbox();
-  for (const cmd of ["echo [] > data/refunds.json", "Set-Content approvals/HP-1042.json x", "cp x scripts/verify-summary.mjs", "rm .claude/hooks/policy-gate.mjs"])
+  for (const cmd of ["echo [] > data/refunds.json", "Set-Content approvals/HP-1042.json x", "cp x scripts/verify-summary.mjs", "rm .claude/hooks/policy-gate.mjs", "cat x > scripts/verify-summary.mjs"])
     assert.equal(gate(dir, shell(cmd)).status, 2, cmd);
 });
 test("the gate lets harmless calls through: reads, searches, other scripts", () => {
   const dir = sandbox();
-  for (const cmd of ["cat scripts/refund.mjs scripts/verify-summary.mjs", "grep -n amount scripts/refund.mjs", "node scripts/refund.mjs.bak", "node scripts/verify-summary.mjs HP-1042", "node scripts/verify-summary.mjs HP-1042; cat scripts/refund.mjs"])
+  for (const cmd of ["cat scripts/refund.mjs scripts/verify-summary.mjs", "grep -n amount scripts/refund.mjs", "grep -n writeFileSync scripts/refund.mjs", "ls scripts 2>/dev/null", "cat scripts/refund.mjs 2>&1 | head -5", "node scripts/refund.mjs.bak", "node scripts/verify-summary.mjs HP-1042", "node scripts/verify-summary.mjs HP-1042; cat scripts/refund.mjs"])
     assert.equal(gate(dir, shell(cmd)).status, 0, cmd);
   assert.equal(gate(dir, { tool_name: "Read", tool_input: { file_path: "data/orders.json" } }).status, 0);
 });
@@ -45,7 +47,25 @@ test("the gate fails closed on bad input, and enforces the step limit", () => {
   const dir = sandbox();
   assert.equal(gate(dir, "not json").status, 2);
   for (let i = 1; i <= 15; i++) assert.equal(gate(dir, { tool_name: "Read", tool_input: { file_path: "x" } }).status, 0, `call ${i}`);
-  assert.equal(gate(dir, { tool_name: "Read", tool_input: { file_path: "x" } }).status, 2, "call 16");
+  // Resetting the copy in work/ changes nothing: the real counter is outside the repo.
+  writeFileSync(join(dir, "work/steps.json"), JSON.stringify({ n: 0 }));
+  assert.equal(gate(dir, { tool_name: "Read", tool_input: { file_path: "x" } }).status, 2, "call 16, after a reset attempt");
+});
+test("the tool-call counter counts calls that arrive at the same moment", async () => {
+  const dir = sandbox(), { spawn } = await import("node:child_process");
+  const one = () => new Promise((ok) => { const p = spawn(process.execPath, [".claude/hooks/policy-gate.mjs"], { cwd: dir, env: envFor(dir) }); p.on("exit", (code) => ok(code)); p.stdin.end(JSON.stringify({ session_id: "par", tool_name: "Read", tool_input: { file_path: "x" } })); });
+  const codes = await Promise.all(Array.from({ length: 20 }, one));
+  assert.equal(codes.filter((c) => c === 0).length, 15, "exactly 15 allowed");
+  assert.equal(codes.filter((c) => c === 2).length, 5, "the rest blocked");
+});
+test("the workflow rejects blank quantities, zero-size packs and bad prices, and calls no model when nothing is valid", () => {
+  const dir = sandbox();
+  writeFileSync(join(dir, "data/supplier-feed.csv"), "sku,name,description,price,unit,qty\nHP-A,A,a,10,each,\nHP-B,B,b,10,0 pk,5\nHP-C,C,c,abc,each,5\n");
+  const r = run(dir, ["scripts/import-feed.mjs"]);
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  const rep = JSON.parse(readFileSync(join(dir, "work/report.json"), "utf8"));
+  assert.deepEqual(rep.rejected.map((x) => x.reason), ["missing quantity", "pack size must be at least 1", "price is not a positive number"]);
+  assert.equal(rep.model.calls, 0);
 });
 
 const good = { order: "HP-1042", amount: 288.95, dates: { paymentCaptured: "2026-11-18", shipmentCreated: "2026-11-19" }, shipment: { state: "rejected", reason: "address validation failed: postal code 83702 does not match city Bend" }, cause: "The carrier rejected the address.", actions: [] };
@@ -61,11 +81,12 @@ test("delivery: a passing summary reaches the outbox; a failing one doesn't, and
   verify(dir, good);
   assert.equal(run(dir, ["scripts/deliver-summary.mjs", "HP-1042"]).status, 0);
   assert.ok(existsSync(join(dir, "outbox/HP-1042.json")));
-  const dir2 = sandbox();
-  verify(dir2, { ...good, amount: 1 });
-  assert.equal(run(dir2, ["scripts/deliver-summary.mjs", "HP-1042"]).status, 1);
-  assert.ok(!existsSync(join(dir2, "outbox/HP-1042.json")));
-  assert.match(readFileSync(join(dir2, "work/verify-failures.json"), "utf8"), /amount/);
+  // Then a failing run in the same folder: the earlier delivery is withdrawn, and the status says this run failed.
+  verify(dir, { ...good, amount: 1 });
+  assert.equal(run(dir, ["scripts/deliver-summary.mjs", "HP-1042"]).status, 1);
+  assert.ok(!existsSync(join(dir, "outbox/HP-1042.json")), "the earlier delivery is withdrawn");
+  assert.equal(JSON.parse(readFileSync(join(dir, "outbox/HP-1042.status.json"), "utf8")).delivered, false);
+  assert.match(readFileSync(join(dir, "work/verify-failures.json"), "utf8"), /amount/);
 });
 test("the refund tool refuses without a person's approval, and validates everything", () => {
   const dir = sandbox();

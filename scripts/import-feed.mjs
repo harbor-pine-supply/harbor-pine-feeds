@@ -18,7 +18,9 @@ const rows = step("validate", () => {
   const seen = new Set(), ok = [];
   for (const r of csv(readFileSync("work/feed.csv", "utf8"))) {
     const price = Number(r.price), qty = Number(r.qty);
-    const reason = !r.sku || !r.name ? "missing SKU or name" : r.price === "" ? "missing price" : !Number.isFinite(price) || price <= 0 ? "price is not a positive number" : !Number.isInteger(qty) || qty < 0 ? "quantity is not a whole number" : !UNITS.test(r.unit) ? `unknown unit "${r.unit}"` : seen.has(r.sku) ? "duplicate SKU" : null;
+    // Zero stock is valid (an item can be listed while out of stock); a blank quantity or a pack of zero is not.
+    const pack = /^(\d+)\s*pk$/i.exec(r.unit)?.[1];
+    const reason = !r.sku || !r.name ? "missing SKU or name" : r.price === "" ? "missing price" : !Number.isFinite(price) || price <= 0 ? "price is not a positive number" : r.qty === "" ? "missing quantity" : !Number.isInteger(qty) || qty < 0 ? "quantity is not a whole number" : !UNITS.test(r.unit) ? `unknown unit "${r.unit}"` : pack !== undefined && Number(pack) < 1 ? "pack size must be at least 1" : seen.has(r.sku) ? "duplicate SKU" : null;
     if (reason) { report.rejected.push({ sku: r.sku, reason }); continue; }
     seen.add(r.sku); ok.push({ ...r, price, qty });
   }
@@ -28,6 +30,7 @@ const rows = step("validate", () => {
 const mapped = step("map", () => rows.map((r) => ({ sku: r.sku, name: r.name, rawDescription: r.description, price: r.price, unit: /pk$/i.test(r.unit) ? "pack of " + r.unit.match(/\d+/)[0] : r.unit, qty: r.qty })));
 // 4. The one model call: normalize product descriptions (no tools; JSON only; two-minute deadline)
 const described = step("normalize", () => {
+  if (!mapped.length) { report.model = { calls: 0 }; return []; } // nothing valid to describe: no model call
   const prompt = "Rewrite each product description in a catalog style: one sentence, sentence case, plain units. Change no facts and keep every number. Return only a JSON object mapping each SKU to its description.\n\n" + JSON.stringify(Object.fromEntries(mapped.map((m) => [m.sku, m.rawDescription])));
   const r = spawnSync("claude", ["-p", "--output-format", "json", "--tools", "", "--", prompt], { encoding: "utf8", shell: false, timeout: 120000 });
   if (r.error) throw Error(`model call could not run: ${r.error.code === "ETIMEDOUT" ? "timed out after 120 s" : r.error.message}`);

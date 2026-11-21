@@ -28,7 +28,7 @@ try {
   if (n > LIMIT) block(`tool-call limit reached (${LIMIT}). Stop and report what you found so far.`);
 
   const tool = call.tool_name, input = call.tool_input || {};
-  // 2. Shell commands: never run the refund or approval tools, in any form (node -- x, node --flag x, bash -c "node x").
+  // 2. Shell commands: block known direct and wrapped runs of the refund or approval tools (node x, node -- x, node --flag x, bash -c "node x"). Not every form: node -e with a dynamic import gets past this pattern; the allowlist stops that.
   if (["Bash", "PowerShell"].includes(tool)) {
     const cmd = String(input.command ?? "");
     const runs = (name) => new RegExp(`\\bnode(?:\\.exe)?(?:\\s+-{1,2}[^\\s"';&|]*)*\\s+["']?[^\\s"';&|]*${name}(?=["'\\s;&|)]|$)`, "i").test(cmd);

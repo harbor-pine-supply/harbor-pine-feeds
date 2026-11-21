@@ -14,11 +14,13 @@ import { randomUUID } from "node:crypto";
 const [order, file = "work/summary.json"] = process.argv.slice(2);
 if (!/^HP-\d{4}$/.test(order ?? "")) { console.error("usage: node scripts/deliver-summary.mjs <order> [summary file]"); process.exit(2); }
 const run = randomUUID(), at = new Date().toISOString();
-mkdirSync("outbox", { recursive: true }); mkdirSync("work", { recursive: true });
 const atomic = (path, text) => { writeFileSync(path + ".tmp", text); renameSync(path + ".tmp", path); };
 const status = (state, extra = {}) => atomic(`outbox/${order}.status.json`, JSON.stringify({ order, run, at, file, state, delivered: state === "delivered", ...extra }, null, 2) + "\n");
+// The outbox holds the status, so it comes first; if even that fails, there is no earlier status left to mislead.
+mkdirSync("outbox", { recursive: true });
 status("pending"); // before anything else: from here on, an interrupted run reads as not delivered
 try {
+  mkdirSync("work", { recursive: true });
   rmSync(`outbox/${order}.json`, { force: true }); // withdraw any earlier delivery before deciding this one
   const v = spawnSync(process.execPath, ["scripts/verify-summary.mjs", order, file], { encoding: "utf8", timeout: 30000 });
   const out = (v.stdout || "") + (v.stderr || "");

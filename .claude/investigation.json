@@ -1,9 +1,15 @@
 {
-  "about": "How the order-investigation agent is run: claude -p with exactly these settings. The allowlist is the boundary: the agent can read, search, edit work/summary.json and run one command (the verify script). Every other command is denied before it runs, including any way of running the refund or approval tools.",
+  "about": "How the order-investigation agent is run: claude -p with exactly these settings. The allowlist is the boundary. The agent can read, search, run read-only shell commands (Claude Code runs those without approval), edit work/summary.json and run one script, the verify step. Any other command needs approval, and in this unattended run it is denied before it runs. In the labeled bypass test that included the two ways of running the refund and approval tools that the gate's pattern missed (node -e with a dynamic import).",
   "permissionMode": "acceptEdits",
-  "allowedTools": ["Read", "Glob", "Grep", "Bash(node scripts/verify-summary.mjs HP-1042)", "Edit(work/summary.json)"],
+  "allowedTools": [
+    "Read",
+    "Glob",
+    "Grep",
+    "Bash(node scripts/verify-summary.mjs HP-1042)",
+    "Edit(work/summary.json)"
+  ],
   "maxTurns": 15,
-  "maxBudgetUsd": 1.0,
+  "maxBudgetUsd": 1,
   "toolCallLimit": 15,
   "settingSources": "project"
 }
